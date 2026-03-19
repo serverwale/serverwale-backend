@@ -44,6 +44,7 @@ const parseProduct = (p) => ({
   features: parseJSON(p.features),
   specifications: parseJSON(p.specifications),
   images: parseJSON(p.images),
+  faqs: parseJSON(p.faqs),
   video_url: p.video_url || null,
 });
 
@@ -72,8 +73,9 @@ router.get("/", async (req, res) => {
     const params = [];
 
     if (category && category !== "All") {
-      sql += " AND category = ?";
-      params.push(category);
+      // Escape for safe SQL string interpolation
+      const safe = category.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
+      sql += ` AND (category = '${safe}' OR category LIKE '${safe}, %' OR category LIKE '%, ${safe}, %' OR category LIKE '%, ${safe}')`;
     }
     if (featured === "1") {
       sql += " AND is_featured = 1";
@@ -111,10 +113,15 @@ router.get("/:id", async (req, res) => {
       [id]
     );
 
-    // Related products (same category, exclude self)
+    // Related products — match on first/primary category tag
+    const primaryCat = (product.category || "").split(",")[0].trim();
+    const safeCat = primaryCat.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/%/g, "\\%").replace(/_/g, "\\_");
     const [related] = await db.promise().query(
-      "SELECT * FROM shop_products WHERE category = ? AND id != ? LIMIT 4",
-      [product.category, id]
+      `SELECT * FROM shop_products
+       WHERE (category = '${safeCat}' OR category LIKE '${safeCat}, %'
+              OR category LIKE '%, ${safeCat}, %' OR category LIKE '%, ${safeCat}')
+       AND id != ? LIMIT 6`,
+      [id]
     );
 
     res.json({

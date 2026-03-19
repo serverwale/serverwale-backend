@@ -122,15 +122,20 @@ router.post("/", upload.single("image"), (req, res) => {
 
 // UPDATE blog
 router.put("/:id", upload.single("image"), (req, res) => {
-  const { title, slug, excerpt, content, tags, status } = req.body;
+  const { title, slug, excerpt, content, tags, status, imageUrl } = req.body;
 
   let sql =
     "UPDATE blogs SET title=?, slug=?, excerpt=?, content=?, tags=?, status=?";
   const params = [title, slug, excerpt, content, tags, status];
 
   if (req.file) {
+    // Uploaded file takes priority
     sql += ", image=?";
     params.push(`/uploads/blogs/${req.file.filename}`);
+  } else if (imageUrl) {
+    // External URL (e.g. Unsplash) stored directly
+    sql += ", image=?";
+    params.push(imageUrl);
   }
 
   sql += " WHERE id=?";
