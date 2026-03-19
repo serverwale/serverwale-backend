@@ -1,7 +1,44 @@
 const express = require("express");
 const db = require("../db");
+const sendEmail = require("../utils/sendEmail");
 
 const router = express.Router();
+
+/* =========================
+   POST — create pricing request + send email
+========================= */
+router.post("/", (req, res) => {
+  const { full_name, phone, email, service } = req.body;
+
+  if (!full_name || !phone || !email) {
+    return res.status(400).json({ success: false, message: "Name, phone, and email are required" });
+  }
+
+  const sql = "INSERT INTO pricing_requests (full_name, phone, email, service, status) VALUES (?, ?, ?, ?, 'new')";
+
+  db.query(sql, [full_name, phone, email, service || ""], async (err, result) => {
+    if (err) {
+      console.error("INSERT ERROR ❌", err);
+      return res.status(500).json({ success: false });
+    }
+
+    // Send email notification
+    try {
+      await sendEmail({
+        name: full_name,
+        company: "",
+        email,
+        phone,
+        service: service || "Not specified",
+        message: `Pricing request received for: ${service || "product"}`,
+      });
+    } catch (emailErr) {
+      console.error("Pricing request email error ❌", emailErr.message);
+    }
+
+    res.json({ success: true, id: result.insertId });
+  });
+});
 
 /* =========================
    GET pricing requests count (TOTAL + NEW)

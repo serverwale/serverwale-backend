@@ -95,6 +95,35 @@ app.use("/api/shop-products", require("./routes/shopProducts"));
 app.use("/api/shop-categories", require("./routes/shopCategories"));
 app.use("/api/jobs", require("./routes/jobs"));
 
+/* ── AI AGENTS (Security + Marketing) ── */
+const { inspectRequest } = require("./ai-agents/securityAgent");
+app.use(inspectRequest); // Security middleware on all routes
+app.use("/api/ai", require("./routes/aiAgents"));
+
+/* ================================
+   IMAGE PROXY (strips Referer so
+   serverwale.com images load)
+================================ */
+const axios = require("axios");
+app.get("/api/img-proxy", async (req, res) => {
+  const raw = req.query.u;
+  if (!raw) return res.status(400).send("Missing url");
+  try {
+    const imgRes = await axios.get(raw, {
+      responseType: "arraybuffer",
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 8000,
+    });
+    const ct = imgRes.headers["content-type"] || "image/webp";
+    res.set("Content-Type", ct);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.set("Access-Control-Allow-Origin", "*");
+    res.send(Buffer.from(imgRes.data));
+  } catch {
+    res.status(502).send("Image fetch failed");
+  }
+});
+
 /* ================================
    CONSULTATION API
 ================================ */

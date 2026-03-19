@@ -8,13 +8,15 @@ const db = require("../db");
 router.get("/", async (req, res) => {
   try {
     const [rows] = await db.promise().query(`
-      SELECT 
+      SELECT
         sc.id,
         sc.name,
         sc.created_at,
         COUNT(sp.id) AS product_count
       FROM shop_categories sc
-      LEFT JOIN shop_products sp ON sp.category = sc.name
+      LEFT JOIN shop_products sp
+        ON (sp.category = sc.name
+          OR sp.category LIKE CONCAT(sc.name, ' > %'))
       GROUP BY sc.id, sc.name, sc.created_at
       ORDER BY sc.name ASC
     `);
