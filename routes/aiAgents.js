@@ -53,6 +53,16 @@ router.post("/reports/traffic",        ctrl.reports.sendTrafficReport);
 router.post("/reports/marketing",      ctrl.reports.sendMarketingReport);
 router.post("/reports/test",           ctrl.reports.sendTest);
 
+/* ── BLOG AGENT ───────────────────────────────────────────── */
+router.get("/blog/topics",             ctrl.blog.autoPickTopics);      // AI picks topics
+router.post("/blog/generate",          ctrl.blog.generateNow);         // generate + publish now
+router.post("/blog/rewrite/:id",       ctrl.blog.rewriteBlog);         // rewrite existing blog
+router.get("/blog/schedules",          ctrl.blog.getSchedules);        // get all schedules
+router.post("/blog/schedules",         ctrl.blog.createSchedule);      // create schedule
+router.put("/blog/schedules/:id",      ctrl.blog.updateSchedule);      // update schedule
+router.delete("/blog/schedules/:id",   ctrl.blog.deleteSchedule);      // delete schedule
+router.post("/blog/schedules/:id/run", ctrl.blog.runNow);              // run schedule manually
+
 /* ── AGENT STATUS DASHBOARD ───────────────────────────────── */
 router.get("/status",                  ctrl.getAgentStatus);
 

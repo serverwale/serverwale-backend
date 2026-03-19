@@ -10,6 +10,7 @@ const marketingAgent = require("../ai-agents/marketingAgent");
 const analyticsAgent = require("../ai-agents/analyticsAgent");
 const seoAgent       = require("../ai-agents/seoAgent");
 const reportAgent    = require("../ai-agents/reportAgent");
+const blogAgent      = require("../ai-agents/blogAgent");
 
 /* ══════════════════════════════════════════════════════════
    SECURITY AGENT
@@ -424,4 +425,102 @@ const getAgentStatus = (req, res) => {
   }
 };
 
-module.exports = { security, marketing, analytics, seo, reports, getAgentStatus };
+/* ══════════════════════════════════════════════════════════
+   BLOG AGENT
+══════════════════════════════════════════════════════════ */
+const blog = {
+  // GET /api/ai/blog/topics?count=5
+  autoPickTopics: async (req, res) => {
+    try {
+      const count = parseInt(req.query.count) || 5;
+      const topics = await blogAgent.autoPickTopics(count);
+      res.json({ success: true, topics });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // POST /api/ai/blog/generate  { topic, primaryKeyword, secondaryKeywords, targetLength }
+  generateNow: async (req, res) => {
+    try {
+      const { topic, primaryKeyword, secondaryKeywords = [], targetLength = "medium" } = req.body;
+      if (!topic) return res.status(400).json({ error: "topic is required" });
+      const result = await blogAgent.generateAndPublishNow({ topic, primaryKeyword, secondaryKeywords, targetLength });
+      res.json({ success: true, blog: result, message: `Blog published & email sent to ${process.env.REPORT_TO_EMAIL || "akankshaa.mee@gmail.com"} ✅` });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // POST /api/ai/blog/rewrite/:id
+  rewriteBlog: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await blogAgent.rewriteAndPublish(parseInt(id));
+      res.json({ success: true, blog: result, message: `Blog rewritten & email sent ✅` });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // GET /api/ai/blog/schedules
+  getSchedules: (req, res) => {
+    try {
+      const schedules = blogAgent.getSchedules();
+      res.json({ success: true, schedules });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // POST /api/ai/blog/schedules
+  createSchedule: (req, res) => {
+    try {
+      const schedule = blogAgent.createSchedule(req.body);
+      blogAgent.startCronForSchedule(schedule);
+      res.json({ success: true, schedule });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // PUT /api/ai/blog/schedules/:id
+  updateSchedule: (req, res) => {
+    try {
+      const { id } = req.params;
+      const updated = blogAgent.updateSchedule(id, req.body);
+      if (!updated) return res.status(404).json({ error: "Schedule not found" });
+      if (updated.active) blogAgent.startCronForSchedule(updated);
+      else blogAgent.stopCronForSchedule(id);
+      res.json({ success: true, schedule: updated });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // DELETE /api/ai/blog/schedules/:id
+  deleteSchedule: (req, res) => {
+    try {
+      blogAgent.stopCronForSchedule(req.params.id);
+      blogAgent.deleteSchedule(req.params.id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+
+  // POST /api/ai/blog/schedules/:id/run  (manual trigger)
+  runNow: async (req, res) => {
+    try {
+      const schedules = blogAgent.getSchedules();
+      const schedule = schedules.find(s => s.id === req.params.id);
+      if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+      const published = await blogAgent.runScheduledPublish(schedule);
+      res.json({ success: true, published, count: published.length });
+    } catch (err) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  },
+};
+
+module.exports = { security, marketing, analytics, seo, reports, blog, getAgentStatus };

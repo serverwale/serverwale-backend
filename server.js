@@ -25,6 +25,7 @@ const db = require("./db");
 const { inspectRequest, trackLogin, getRecentLogs, getSuspiciousIPs, logEvent } = require("./ai-agents/securityAgent");
 const analyticsAgent = require("./ai-agents/analyticsAgent");
 const reportAgent    = require("./ai-agents/reportAgent");
+const blogAgent      = require("./ai-agents/blogAgent");
 
 const app    = express();
 const server = http.createServer(app);
@@ -325,6 +326,11 @@ app.use((err, req, res, next) => {
 reportAgent.startReportScheduler();
 
 /* ================================
+   START BLOG AGENT SCHEDULES
+================================ */
+blogAgent.startAllSchedules();
+
+/* ================================
    SERVER START (use http server for Socket.io)
 ================================ */
 const PORT = process.env.PORT || 5000;
@@ -335,4 +341,5 @@ server.listen(PORT, () => {
   console.log(`📈 Marketing Agent: ACTIVE`);
   console.log(`🔍 SEO Agent: ACTIVE`);
   console.log(`📧 Report Agent: ACTIVE (daily 8AM IST)`);
+  console.log(`✍️  Blog Agent: ACTIVE (schedules loaded)`);
 });
