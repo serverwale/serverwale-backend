@@ -12,6 +12,10 @@
 const express = require("express");
 const router = express.Router();
 const ctrl = require("../controllers/aiAgentsController");
+const { verifyAdmin } = require("../middleware/adminAuth");
+
+// 🔒 All AI Agent routes are admin-only
+router.use(verifyAdmin);
 
 /* ── SECURITY AGENT ───────────────────────────────────────── */
 router.get("/security/logs",           ctrl.security.getLogs);

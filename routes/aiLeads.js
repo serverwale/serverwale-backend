@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const { verifyAdmin } = require("../middleware/adminAuth");
+router.use(verifyAdmin); // 🔒 Admin only
 const db = require("../db");
 
 /**

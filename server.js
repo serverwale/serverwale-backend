@@ -17,6 +17,7 @@ const cors      = require("cors");
 const path      = require("path");
 const axios     = require("axios");
 const bcrypt    = require("bcryptjs");
+const { generateToken, verifyAdmin } = require("./middleware/adminAuth");
 require("dotenv").config();
 
 const db = require("./db");
@@ -295,7 +296,8 @@ app.post("/api/admin/login", loginLimiter, (req, res) => {
       }
 
       trackLogin(ip, true);
-      res.json({ success: true, message: "Login successful 🎉" });
+      const token = generateToken(admin);
+      res.json({ success: true, message: "Login successful 🎉", token, username: admin.username });
     }
   );
 });

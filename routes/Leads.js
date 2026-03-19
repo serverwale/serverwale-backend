@@ -3,6 +3,8 @@ const db = require("../db");
 const sendEmail = require("../utils/sendEmail");
 
 const router = express.Router();
+const { verifyAdmin } = require("../middleware/adminAuth");
+router.use(verifyAdmin); // 🔒 Admin only
 
 /* =========================
    GET lead counts (TOTAL + NEW)

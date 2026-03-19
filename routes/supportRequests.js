@@ -4,6 +4,8 @@ const express = require("express");
 const db = require("../db");
 
 const router = express.Router();
+const { verifyAdmin } = require("../middleware/adminAuth");
+router.use(verifyAdmin); // 🔒 Admin only
 
 /* =========================
    GET support requests count (TOTAL + NEW)
