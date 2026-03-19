@@ -8,17 +8,72 @@ process.on("unhandledRejection", (reason) => {
   console.error("🔥 UNHANDLED PROMISE REJECTION:", reason);
 });
 
-const helmet = require("helmet");
+const http      = require("http");
+const { Server } = require("socket.io");
+const helmet    = require("helmet");
 const rateLimit = require("express-rate-limit");
-
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
+const express   = require("express");
+const cors      = require("cors");
+const path      = require("path");
+const axios     = require("axios");
+const bcrypt    = require("bcryptjs");
 require("dotenv").config();
 
 const db = require("./db");
 
-const app = express();
+/* ── AI Agents ── */
+const { inspectRequest, trackLogin, getRecentLogs, getSuspiciousIPs, logEvent } = require("./ai-agents/securityAgent");
+const analyticsAgent = require("./ai-agents/analyticsAgent");
+const reportAgent    = require("./ai-agents/reportAgent");
+
+const app    = express();
+const server = http.createServer(app);
+
+/* ================================
+   SOCKET.IO — Real-Time Dashboard
+================================ */
+const io = new Server(server, {
+  cors: {
+    origin: ["http://localhost:3000","http://localhost:3001","http://localhost:3002",
+             "http://localhost:3003","http://localhost:3004","http://localhost:3005",
+             "http://localhost:5173","https://serverwale.com"],
+    credentials: true,
+  },
+});
+
+// Pass io to analytics agent so it can push live updates
+analyticsAgent.setIO(io);
+
+io.on("connection", (socket) => {
+  console.log(`[Socket.io] Client connected: ${socket.id}`);
+
+  // Admin joins "admin-room" to receive real-time agent data
+  socket.on("join-admin", () => {
+    socket.join("admin-room");
+    // Send current state immediately on connect
+    socket.emit("visitor-update", {
+      activeCount: analyticsAgent.getActiveVisitors().length,
+      activeVisitors: analyticsAgent.getActiveVisitors(),
+    });
+    socket.emit("security-logs", {
+      logs: getRecentLogs(20),
+      suspiciousIPs: getSuspiciousIPs(),
+    });
+  });
+
+  // Visitor heartbeat to keep session alive
+  socket.on("visitor-ping", ({ sessionId }) => {
+    if (sessionId) {
+      const visitors = analyticsAgent.getActiveVisitors();
+      const v = visitors.find(x => x.sessionId === sessionId);
+      if (v) v.lastSeen = new Date().toISOString();
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+  });
+});
 
 /* ================================
    BASIC SECURITY
@@ -35,7 +90,6 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
    STATIC FILES
 ================================ */
 const uploadsPath = path.join(__dirname, "uploads");
-// Allow cross-origin image/file access from frontend dev server
 app.use("/uploads", (req, res, next) => {
   res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -43,28 +97,41 @@ app.use("/uploads", (req, res, next) => {
 }, express.static(uploadsPath));
 console.log("Uploads folder:", uploadsPath);
 
-// Security headers (relaxed for dev — tighten in prod)
+// Security headers
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   contentSecurityPolicy: false,
 }));
 
-// CORS (lock this in prod)
+// CORS
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:3004", "http://localhost:3005", "http://localhost:5173"],
+  origin: ["http://localhost:3000","http://localhost:3001","http://localhost:3002",
+           "http://localhost:3003","http://localhost:3004","http://localhost:3005",
+           "http://localhost:5173","https://serverwale.com"],
   credentials: true,
 }));
 
-// Rate limiting — only on login (anti-bruteforce), not all API routes
+/* ================================
+   AI SECURITY MIDDLEWARE (FIRST — before all routes)
+================================ */
+app.use(inspectRequest);
+
+/* ================================
+   ANALYTICS MIDDLEWARE
+================================ */
+app.use(analyticsAgent.analyticsMiddleware);
+
+/* ================================
+   RATE LIMITING
+================================ */
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  // 15 minutes
-  max: 20,                     // max 20 login attempts per 15 min
+  windowMs: 15 * 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { success: false, message: "Too many login attempts. Please try again later." }
+  message: { success: false, message: "Too many login attempts. Please try again later." },
 });
 
-// Light rate limit for public form submissions only
 const formLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 500,
@@ -75,36 +142,32 @@ const formLimiter = rateLimit({
 /* ================================
    ROUTES
 ================================ */
-app.use("/api/products", require("./routes/products"));
-app.use("/api/product-images", require("./routes/productImages"));
-app.use("/api/product-reviews", require("./routes/productReviews"));
-app.use("/api/product-descriptions", require("./routes/productDescriptions"));
-app.use("/api/product-specifications", require("./routes/productSpecification"));
-app.use("/api/product-faqs", require("./routes/productFAQ"));
-app.use("/api/product-warranty", require("./routes/productWarranty"));
-app.use("/api/categories", require("./routes/categories"));
-app.use("/api/pricing-requests", require("./routes/pricingRequests"));
-app.use("/api/support-requests", require("./routes/supportRequests"));
-app.use("/api/inquiries", require("./routes/inquiries"));
-app.use("/api/blogs", require("./routes/blogs"));
-app.use("/api/leads", require("./routes/Leads"));
-app.use("/api/ai-leads", require("./routes/aiLeads"));
-app.use("/api/consultations", require("./routes/consultations")); 
-app.use("/api/chat", require("./routes/chat"));
-app.use("/api/shop-products", require("./routes/shopProducts"));
-app.use("/api/shop-categories", require("./routes/shopCategories"));
-app.use("/api/jobs", require("./routes/jobs"));
+app.use("/api/products",              require("./routes/products"));
+app.use("/api/product-images",        require("./routes/productImages"));
+app.use("/api/product-reviews",       require("./routes/productReviews"));
+app.use("/api/product-descriptions",  require("./routes/productDescriptions"));
+app.use("/api/product-specifications",require("./routes/productSpecification"));
+app.use("/api/product-faqs",          require("./routes/productFAQ"));
+app.use("/api/product-warranty",      require("./routes/productWarranty"));
+app.use("/api/categories",            require("./routes/categories"));
+app.use("/api/pricing-requests",      require("./routes/pricingRequests"));
+app.use("/api/support-requests",      require("./routes/supportRequests"));
+app.use("/api/inquiries",             require("./routes/inquiries"));
+app.use("/api/blogs",                 require("./routes/blogs"));
+app.use("/api/leads",                 require("./routes/Leads"));
+app.use("/api/ai-leads",              require("./routes/aiLeads"));
+app.use("/api/consultations",         require("./routes/consultations"));
+app.use("/api/chat",                  require("./routes/chat"));
+app.use("/api/shop-products",         require("./routes/shopProducts"));
+app.use("/api/shop-categories",       require("./routes/shopCategories"));
+app.use("/api/jobs",                  require("./routes/jobs"));
 
-/* ── AI AGENTS (Security + Marketing) ── */
-const { inspectRequest } = require("./ai-agents/securityAgent");
-app.use(inspectRequest); // Security middleware on all routes
+/* ── AI AGENTS (Security + Marketing + Analytics + SEO) ── */
 app.use("/api/ai", require("./routes/aiAgents"));
 
 /* ================================
-   IMAGE PROXY (strips Referer so
-   serverwale.com images load)
+   IMAGE PROXY
 ================================ */
-const axios = require("axios");
 app.get("/api/img-proxy", async (req, res) => {
   const raw = req.query.u;
   if (!raw) return res.status(400).send("Missing url");
@@ -125,47 +188,33 @@ app.get("/api/img-proxy", async (req, res) => {
 });
 
 /* ================================
-   IMAGE PROXY (strips Referer so
-   serverwale.com images load)
+   SITEMAP & ROBOTS
 ================================ */
-const axios = require("axios");
-app.get("/api/img-proxy", async (req, res) => {
-  const raw = req.query.u;
-  if (!raw) return res.status(400).send("Missing url");
-  try {
-    const imgRes = await axios.get(raw, {
-      responseType: "arraybuffer",
-      headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 8000,
-    });
-    const ct = imgRes.headers["content-type"] || "image/webp";
-    res.set("Content-Type", ct);
-    res.set("Cache-Control", "public, max-age=86400");
-    res.set("Access-Control-Allow-Origin", "*");
-    res.send(Buffer.from(imgRes.data));
-  } catch {
-    res.status(502).send("Image fetch failed");
-  }
+const seoAgent = require("./ai-agents/seoAgent");
+
+app.get("/sitemap.xml", (req, res) => {
+  res.set("Content-Type", "application/xml");
+  res.send(seoAgent.generateSitemap());
+});
+
+app.get("/robots.txt", (req, res) => {
+  res.set("Content-Type", "text/plain");
+  res.send(seoAgent.generateRobotsTxt());
 });
 
 /* ================================
    CONSULTATION API
 ================================ */
-app.post("/api/consultations", (req, res) => {
+app.post("/api/consultations", formLimiter, (req, res) => {
   const { name, phone, state, email } = req.body;
-
   if (!name || !phone || !state || !email) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
-
   db.query(
     "INSERT INTO consultations (name, phone, state, email) VALUES (?, ?, ?, ?)",
     [name, phone, state, email],
     (err, result) => {
-      if (err) {
-        console.error("DB Error ❌", err);
-        return res.status(500).json({ success: false });
-      }
+      if (err) { console.error("DB Error ❌", err); return res.status(500).json({ success: false }); }
       res.json({ success: true, id: result.insertId });
     }
   );
@@ -174,27 +223,16 @@ app.post("/api/consultations", (req, res) => {
 /* ================================
    CONTACT API
 ================================ */
-app.post("/api/contact", (req, res) => {
+app.post("/api/contact", formLimiter, (req, res) => {
   const { name, email, company, requirement, message } = req.body;
-
   if (!name || !email || !message) {
-    return res.status(400).json({
-      success: false,
-      message: "Required fields missing",
-    });
+    return res.status(400).json({ success: false, message: "Required fields missing" });
   }
-
   db.query(
-    `INSERT INTO contact_inquiries
-     (full_name, email, company, requirement, details)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT INTO contact_inquiries (full_name, email, company, requirement, details) VALUES (?, ?, ?, ?, ?)`,
     [name, email, company || null, requirement || null, message],
     (err, result) => {
-      if (err) {
-        console.error("CONTACT MYSQL ERROR ❌", err);
-        return res.status(500).json({ success: false });
-      }
-
+      if (err) { console.error("CONTACT MYSQL ERROR ❌", err); return res.status(500).json({ success: false }); }
       res.json({ success: true, id: result.insertId });
     }
   );
@@ -203,51 +241,59 @@ app.post("/api/contact", (req, res) => {
 /* ================================
    PRICING API
 ================================ */
-app.post("/api/pricing", (req, res) => {
+app.post("/api/pricing", formLimiter, (req, res) => {
   const { name, phone, serviceType, email } = req.body;
-
   if (!name || !phone || !serviceType || !email) {
     return res.status(400).json({ success: false, message: "Missing fields" });
   }
-
   db.query(
-    `INSERT INTO pricing_requests
-     (full_name, phone, service, email, status)
-     VALUES (?, ?, ?, ?, 'new')`,
+    `INSERT INTO pricing_requests (full_name, phone, service, email, status) VALUES (?, ?, ?, ?, 'new')`,
     [name, phone, serviceType, email],
     (err, result) => {
-      if (err) {
-        console.error("PRICING MYSQL ERROR ❌", err);
-        return res.status(500).json({ success: false });
-      }
-
+      if (err) { console.error("PRICING MYSQL ERROR ❌", err); return res.status(500).json({ success: false }); }
       res.json({ success: true, id: result.insertId });
     }
   );
 });
 
 /* ================================
-   ADMIN LOGIN API
+   ADMIN LOGIN API (bcrypt secured)
 ================================ */
 app.post("/api/admin/login", loginLimiter, (req, res) => {
   const { username, password } = req.body;
-
   if (!username || !password) {
     return res.json({ success: false, message: "Missing fields" });
   }
 
+  // Track login attempt for brute-force detection
+  const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+
   db.query(
     "SELECT * FROM admin_users WHERE username = ?",
     [username],
-    (err, result) => {
+    async (err, result) => {
       if (err) return res.json({ success: false, message: "Database error" });
-      if (!result.length)
-        return res.json({ success: false, message: "User not found" });
+      if (!result.length) {
+        trackLogin(ip, false);
+        return res.json({ success: false, message: "Invalid credentials" });
+      }
 
       const admin = result[0];
-      if (password !== admin.password)
-        return res.json({ success: false, message: "Wrong password" });
 
+      // Support both hashed (bcrypt) and plain passwords (legacy)
+      let match = false;
+      if (admin.password && admin.password.startsWith("$2")) {
+        match = await bcrypt.compare(password, admin.password);
+      } else {
+        match = password === admin.password;
+      }
+
+      if (!match) {
+        trackLogin(ip, false);
+        return res.json({ success: false, message: "Invalid credentials" });
+      }
+
+      trackLogin(ip, true);
       res.json({ success: true, message: "Login successful 🎉" });
     }
   );
@@ -257,22 +303,36 @@ app.post("/api/admin/login", loginLimiter, (req, res) => {
    HEALTH CHECK
 ================================ */
 app.get("/api/health", (req, res) => {
-  res.json({ status: "OK", ai: "Emma running 🤖" });
+  res.json({
+    status: "OK",
+    ai: "All agents running 🤖",
+    agents: ["Security", "Marketing", "Analytics", "SEO", "Reports"],
+    uptime: Math.floor(process.uptime()) + "s",
+  });
 });
-
-
 
 /* ================================
-   SERVER START
+   GLOBAL ERROR HANDLER
 ================================ */
-const PORT = process.env.PORT || 5000;
-
-app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT} 🚀`);
-});
-
 app.use((err, req, res, next) => {
-  console.error(err.message);
+  console.error("[Server Error]", err.message);
   res.status(500).json({ message: "Internal Server Error" });
 });
 
+/* ================================
+   START REPORT SCHEDULER
+================================ */
+reportAgent.startReportScheduler();
+
+/* ================================
+   SERVER START (use http server for Socket.io)
+================================ */
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  console.log(`✅ Backend + Socket.io running on http://localhost:${PORT}`);
+  console.log(`📊 Analytics Agent: ACTIVE`);
+  console.log(`🛡️  Security Agent: ACTIVE`);
+  console.log(`📈 Marketing Agent: ACTIVE`);
+  console.log(`🔍 SEO Agent: ACTIVE`);
+  console.log(`📧 Report Agent: ACTIVE (daily 8AM IST)`);
+});

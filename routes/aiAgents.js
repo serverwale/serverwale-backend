@@ -3,58 +3,57 @@
  *   SERVERWALE — AI AGENTS ROUTES
  *   /api/ai/security/*   → Security Agent
  *   /api/ai/marketing/*  → Marketing Agent
+ *   /api/ai/analytics/*  → Analytics Agent (Real-Time Traffic)
+ *   /api/ai/seo/*        → SEO Agent
+ *   /api/ai/reports/*    → Report Agent
  * ============================================================
  */
 
 const express = require("express");
 const router = express.Router();
-const securityCtrl = require("../controllers/aiAgentsController").security;
-const marketingCtrl = require("../controllers/aiAgentsController").marketing;
+const ctrl = require("../controllers/aiAgentsController");
 
 /* ── SECURITY AGENT ───────────────────────────────────────── */
-
-// GET  /api/ai/security/logs           → recent security logs
-router.get("/security/logs", securityCtrl.getLogs);
-
-// GET  /api/ai/security/suspicious-ips → flagged IPs
-router.get("/security/suspicious-ips", securityCtrl.getSuspiciousIPs);
-
-// GET  /api/ai/security/report         → AI-generated security report
-router.get("/security/report", securityCtrl.getReport);
-
-// POST /api/ai/security/analyze        → analyze a specific log entry
-router.post("/security/analyze", securityCtrl.analyzeEvent);
-
-// POST /api/ai/security/chat           → chat with security agent
-router.post("/security/chat", securityCtrl.chat);
+router.get("/security/logs",           ctrl.security.getLogs);
+router.get("/security/suspicious-ips", ctrl.security.getSuspiciousIPs);
+router.get("/security/report",         ctrl.security.getReport);
+router.post("/security/analyze",       ctrl.security.analyzeEvent);
+router.post("/security/chat",          ctrl.security.chat);
 
 /* ── MARKETING AGENT ──────────────────────────────────────── */
+router.post("/marketing/score-lead",   ctrl.marketing.scoreLead);
+router.post("/marketing/email",        ctrl.marketing.generateEmail);
+router.post("/marketing/blog",         ctrl.marketing.generateBlog);
+router.post("/marketing/social",       ctrl.marketing.generateSocial);
+router.post("/marketing/segments",     ctrl.marketing.analyzeSegments);
+router.post("/marketing/upsell",       ctrl.marketing.getUpsell);
+router.post("/marketing/campaign",     ctrl.marketing.planCampaign);
+router.post("/marketing/competitor",   ctrl.marketing.analyzeCompetitor);
+router.post("/marketing/chat",         ctrl.marketing.chat);
 
-// POST /api/ai/marketing/score-lead    → score & qualify a lead
-router.post("/marketing/score-lead", marketingCtrl.scoreLead);
+/* ── ANALYTICS AGENT (Real-Time Traffic) ─────────────────── */
+router.get("/analytics/live",          ctrl.analytics.getLiveVisitors);
+router.get("/analytics/pageviews",     ctrl.analytics.getPageViews);
+router.get("/analytics/daily",         ctrl.analytics.getDailyStats);
+router.get("/analytics/top-pages",     ctrl.analytics.getTopPages);
+router.get("/analytics/countries",     ctrl.analytics.getTopCountries);
+router.get("/analytics/devices",       ctrl.analytics.getDeviceStats);
+router.get("/analytics/summary",       ctrl.analytics.getSummary);
 
-// POST /api/ai/marketing/email         → generate email campaign
-router.post("/marketing/email", marketingCtrl.generateEmail);
+/* ── SEO AGENT ────────────────────────────────────────────── */
+router.post("/seo/audit",              ctrl.seo.auditPage);
+router.post("/seo/keywords",           ctrl.seo.researchKeywords);
+router.post("/seo/check",              ctrl.seo.quickCheck);
+router.get("/seo/report",              ctrl.seo.getReport);
+router.post("/seo/chat",               ctrl.seo.chat);
 
-// POST /api/ai/marketing/blog          → generate SEO blog post
-router.post("/marketing/blog", marketingCtrl.generateBlog);
+/* ── REPORT AGENT ─────────────────────────────────────────── */
+router.post("/reports/security",       ctrl.reports.sendSecurityReport);
+router.post("/reports/traffic",        ctrl.reports.sendTrafficReport);
+router.post("/reports/marketing",      ctrl.reports.sendMarketingReport);
+router.post("/reports/test",           ctrl.reports.sendTest);
 
-// POST /api/ai/marketing/social        → generate social media post
-router.post("/marketing/social", marketingCtrl.generateSocial);
-
-// POST /api/ai/marketing/segments      → analyze customer segments
-router.post("/marketing/segments", marketingCtrl.analyzeSegments);
-
-// POST /api/ai/marketing/upsell        → get upsell recommendations
-router.post("/marketing/upsell", marketingCtrl.getUpsell);
-
-// POST /api/ai/marketing/campaign      → plan a marketing campaign
-router.post("/marketing/campaign", marketingCtrl.planCampaign);
-
-// POST /api/ai/marketing/competitor    → competitor analysis
-router.post("/marketing/competitor", marketingCtrl.analyzeCompetitor);
-
-// POST /api/ai/marketing/chat          → chat with marketing agent
-router.post("/marketing/chat", marketingCtrl.chat);
+/* ── AGENT STATUS DASHBOARD ───────────────────────────────── */
+router.get("/status",                  ctrl.getAgentStatus);
 
 module.exports = router;
